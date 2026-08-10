@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.firestopmalta.twa",
+        "sha256_cert_fingerprints": ["36:37:01:F3:10:A3:B9:36:4E:BF:EA:74:BA:CA:9B:1F:7F:25:20:17:1E:AB:F8:A1:06:F3:19:D0:00:97:BC:2F"]
+      }
+    }]
