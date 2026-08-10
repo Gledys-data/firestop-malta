@@ -1,10 +1,19 @@
 {
-  "name": "Firestop Selector",
+  "id": "/",
+  "name": "Firestop Selector · Malta",
   "short_name": "Firestop",
+  "description": "Generic firestop system guidance for penetration seals on Maltese construction sites.",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#F3EAD8",
   "theme_color": "#CF142B",
-  "start_url": ".",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "/icon-192x192.png",
@@ -24,6 +33,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "description": "Generic firestop system guidance for penetration seals on Maltese construction sites."
+  ]
 }

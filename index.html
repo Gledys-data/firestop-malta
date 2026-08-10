@@ -32,6 +32,237 @@
       });
     }
   </script>
+  <script>
+(function () {
+  "use strict";
+
+  var DISMISS_KEY = "fsm_install_dismissed_v1";
+  var DISMISS_DAYS = 14;
+  var deferredPrompt = null;
+  var bannerEl = null;
+  var modalEl = null;
+
+  function isStandalone() {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true ||
+      document.referrer.indexOf("android-app://") === 0
+    );
+  }
+
+  function isDismissed() {
+    try {
+      var v = localStorage.getItem(DISMISS_KEY);
+      if (!v) return false;
+      return Date.now() - parseInt(v, 10) < DISMISS_DAYS * 86400000;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setDismissed() {
+    try {
+      localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  function platform() {
+    var ua = navigator.userAgent;
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return "ios";
+    if (/Android/.test(ua)) return "android";
+    return "desktop";
+  }
+
+  var STYLES =
+    '#fsm-install-bar{position:fixed;left:0;right:0;bottom:0;z-index:2147483000;' +
+    "background:#CF142B;color:#fff;display:flex;align-items:center;gap:12px;" +
+    "padding:12px 14px;box-shadow:0 -2px 14px rgba(0,0,0,.28);" +
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
+    "#fsm-install-bar .fsm-ico{width:38px;height:38px;border-radius:9px;flex:0 0 auto;" +
+    "background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;}" +
+    "#fsm-install-bar .fsm-ico img{width:100%;height:100%;object-fit:cover;}" +
+    "#fsm-install-bar .fsm-txt{flex:1 1 auto;min-width:0;line-height:1.25;}" +
+    "#fsm-install-bar .fsm-t1{font-size:14px;font-weight:700;}" +
+    "#fsm-install-bar .fsm-t2{font-size:12px;opacity:.9;}" +
+    "#fsm-install-bar .fsm-cta{flex:0 0 auto;background:#fff;color:#CF142B;border:0;" +
+    "border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;}" +
+    "#fsm-install-bar .fsm-x{flex:0 0 auto;background:transparent;border:0;color:#fff;" +
+    "font-size:22px;line-height:1;padding:4px 6px;cursor:pointer;opacity:.85;}" +
+    "#fsm-modal{position:fixed;inset:0;z-index:2147483001;background:rgba(0,0,0,.55);" +
+    "display:flex;align-items:flex-end;justify-content:center;" +
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
+    "#fsm-modal .fsm-sheet{background:#F3EAD8;color:#1c1c1c;width:100%;max-width:520px;" +
+    "border-radius:16px 16px 0 0;padding:20px 20px 26px;max-height:86vh;overflow:auto;}" +
+    "#fsm-modal h3{margin:0 0 4px;font-size:18px;color:#CF142B;}" +
+    "#fsm-modal .fsm-sub{margin:0 0 16px;font-size:13px;opacity:.75;}" +
+    "#fsm-modal ol{margin:0;padding-left:22px;}" +
+    "#fsm-modal li{margin-bottom:14px;font-size:15px;line-height:1.45;}" +
+    "#fsm-modal b{background:#fff;border-radius:5px;padding:1px 6px;" +
+    "box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);white-space:nowrap;}" +
+    "#fsm-modal .fsm-close{margin-top:18px;width:100%;background:#CF142B;color:#fff;" +
+    "border:0;border-radius:9px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;}" +
+    "#fsm-modal .fsm-note{margin-top:14px;font-size:12.5px;line-height:1.5;opacity:.7;}";
+
+  function injectStyles() {
+    if (document.getElementById("fsm-install-styles")) return;
+    var s = document.createElement("style");
+    s.id = "fsm-install-styles";
+    s.textContent = STYLES;
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  var STEPS = {
+    android: {
+      title: "Add to your home screen",
+      sub: "Android · Chrome",
+      steps: [
+        "Tap the <b>⋮</b> three-dot menu at the top right of Chrome.",
+        "Scroll down and tap <b>Add to Home screen</b> or <b>Install app</b>.",
+        "Confirm with <b>Add</b>. The Firestop icon will appear on your home screen."
+      ],
+      note:
+        "Don't see the option? Make sure you opened this page in the Chrome app itself — links opened inside WhatsApp or Facebook use a limited browser that hides it. Tap and hold the link, then choose \"Open in Chrome\"."
+    },
+    ios: {
+      title: "Add to your home screen",
+      sub: "iPhone / iPad · Safari",
+      steps: [
+        "Tap the <b>Share</b> button at the bottom of Safari (the square with an arrow pointing up).",
+        "Scroll down the list and tap <b>Add to Home Screen</b>.",
+        "Tap <b>Add</b> at the top right. The Firestop icon will appear on your home screen."
+      ],
+      note:
+        "This only works in Safari. If you are using Chrome or opened the link inside another app, open firestopmalta.com in Safari first."
+    },
+    desktop: {
+      title: "Install this app",
+      sub: "Desktop · Chrome or Edge",
+      steps: [
+        "Look for the <b>install icon</b> in the address bar, at the right side.",
+        "Or open the browser menu and choose <b>Install Firestop Selector</b>.",
+        "Confirm with <b>Install</b>."
+      ],
+      note: "The app will open in its own window, without browser tabs."
+    }
+  };
+
+  function openInstructions() {
+    if (modalEl) return;
+    var p = platform();
+    var cfg = STEPS[p] || STEPS.desktop;
+
+    modalEl = document.createElement("div");
+    modalEl.id = "fsm-modal";
+
+    var items = cfg.steps
+      .map(function (s) {
+        return "<li>" + s + "</li>";
+      })
+      .join("");
+
+    modalEl.innerHTML =
+      '<div class="fsm-sheet" role="dialog" aria-modal="true">' +
+      "<h3>" + cfg.title + "</h3>" +
+      '<p class="fsm-sub">' + cfg.sub + "</p>" +
+      "<ol>" + items + "</ol>" +
+      '<p class="fsm-note">' + cfg.note + "</p>" +
+      '<button class="fsm-close" type="button">Got it</button>' +
+      "</div>";
+
+    modalEl.addEventListener("click", function (e) {
+      if (e.target === modalEl || e.target.classList.contains("fsm-close")) {
+        closeInstructions();
+      }
+    });
+
+    document.documentElement.appendChild(modalEl);
+  }
+
+  function closeInstructions() {
+    if (modalEl && modalEl.parentNode) modalEl.parentNode.removeChild(modalEl);
+    modalEl = null;
+  }
+
+  function hideBanner() {
+    if (bannerEl && bannerEl.parentNode) bannerEl.parentNode.removeChild(bannerEl);
+    bannerEl = null;
+  }
+
+  function showBanner() {
+    if (bannerEl || isStandalone() || isDismissed()) return;
+    injectStyles();
+
+    bannerEl = document.createElement("div");
+    bannerEl.id = "fsm-install-bar";
+    bannerEl.innerHTML =
+      '<div class="fsm-ico"><img src="/icon-192x192.png" alt=""></div>' +
+      '<div class="fsm-txt">' +
+      '<div class="fsm-t1">Add Firestop Selector to your phone</div>' +
+      '<div class="fsm-t2">Open it with one tap, straight from your home screen</div>' +
+      "</div>" +
+      '<button class="fsm-cta" type="button">Add</button>' +
+      '<button class="fsm-x" type="button" aria-label="Close">&times;</button>';
+
+    bannerEl.querySelector(".fsm-cta").addEventListener("click", function () {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function (choice) {
+          if (choice && choice.outcome === "accepted") {
+            setDismissed();
+            hideBanner();
+          }
+          deferredPrompt = null;
+        });
+      } else {
+        openInstructions();
+      }
+    });
+
+    bannerEl.querySelector(".fsm-x").addEventListener("click", function () {
+      setDismissed();
+      hideBanner();
+    });
+
+    document.documentElement.appendChild(bannerEl);
+  }
+
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    showBanner();
+  });
+
+  window.addEventListener("appinstalled", function () {
+    setDismissed();
+    hideBanner();
+    deferredPrompt = null;
+  });
+
+  // Show the banner even when Chrome never fires beforeinstallprompt,
+  // so the user always has a path to the instructions.
+  function boot() {
+    if (isStandalone()) return;
+    setTimeout(showBanner, 2500);
+  }
+
+  if (document.readyState === "complete") {
+    boot();
+  } else {
+    window.addEventListener("load", boot);
+  }
+
+  // Manual trigger available from anywhere: window.fsmShowInstall()
+  window.fsmShowInstall = function () {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+    } else {
+      injectStyles();
+      openInstructions();
+    }
+  };
+})();
+
+  </script>
 </head>
 <body>
   <div id="__bundler_thumbnail">
